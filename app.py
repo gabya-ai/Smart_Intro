@@ -8,92 +8,187 @@ Original file is located at
 """
 
 import os
+import json
+from datetime import datetime
+
 import streamlit as st
 from dotenv import load_dotenv
-from datetime import datetime
-import json
+
 # Vertex AI (Gemini) SDK
 import vertexai
 from vertexai.generative_models import GenerativeModel
 
 from prompts import BASE_PROMPT
 
-# Load .env if present
+# ---------- Config & setup ----------
+
+# Load .env if present (optional)
 load_dotenv()
 
-PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")
+PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")  # SDK can infer from key
 REGION = os.getenv("GOOGLE_CLOUD_REGION", "us-central1")
+
+# Absolute path for logs so we always write to the project folder
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_PATH = os.path.join(APP_DIR, "logs.txt")
 
 # Initialize Vertex AI
 vertexai.init(project=PROJECT_ID, location=REGION)
-model = GenerativeModel("gemini-2.5-flash")  # you can switch to -pro later
 
+# Known-available model (override with env var GEMINI_MODEL_NAME if you like)
+MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash")
+model = GenerativeModel(MODEL_NAME)
+
+# Streamlit page config
 st.set_page_config(page_title="Smart Cover Letter (P0)", page_icon="✍️")
 
+# Session state for persistence
+if "last_draft" not in st.session_state:
+    st.session_state.last_draft = None
+
+# ---------- UI: Input form ----------
 st.title("✍️ Smart Cover Letter (P0)")
 st.caption("Paste your resume and the job description. I’ll draft a tailored letter.")
 
 with st.form("inputs"):
-    resume = st.text_area("Your Resume (paste text)", height=220, placeholder="Paste your resume here…")
-    jd = st.text_area("Job Description (paste text)", height=220, placeholder="Paste the job description here…")
+    resume = st.text_area(
+        "Your Resume (paste text)",
+        height=220,
+        placeholder="Paste your resume here…",
+    )
+    jd = st.text_area(
+        "Job Description (paste text)",
+        height=220,
+        placeholder="Paste the job description here…",
+    )
 
     col1, col2 = st.columns(2)
     with col1:
-        msg_or_letter = st.selectbox("Format", ["Short message (recruiter/LI DM)", "Formal cover letter"])
+        msg_or_letter = st.selectbox(
+            "Format",
+            ["Short message (recruiter/LI DM)", "Formal cover letter"],
+        )
     with col2:
         length = st.selectbox("Length", ["1 paragraph", "2–3 paragraphs"])
 
     highlights = st.text_input(
         "Any specific highlights to emphasize? (comma-separated)",
-        placeholder="e.g., leadership, ML ops, stakeholder comms"
+        placeholder="e.g., leadership, ML ops, stakeholder comms",
     )
 
     submitted = st.form_submit_button("Generate Letter", use_container_width=True)
 
+# ---------- Generation (only when submitted) ----------
 if submitted:
     if not resume.strip() or not jd.strip():
         st.warning("Please paste both your resume and the job description.")
     else:
-        format_style = "short message" if "Short message" in msg_or_letter else "formal cover letter"
+        format_style = (
+            "short message" if "Short message" in msg_or_letter else "formal cover letter"
+        )
         length_style = length
 
         prompt = BASE_PROMPT.format(
             length_style=length_style,
             format_style=format_style,
-            highlights=highlights if highlights.strip() else "the most relevant strengths",
+            highlights=highlights.strip() or "the most relevant strengths",
             resume=resume,
-            jd=jd
+            jd=jd,
         )
 
         with st.spinner("Drafting…"):
             try:
                 resp = model.generate_content(prompt)
-                text = resp.candidates[0].content.parts[0].text if resp and resp.candidates else "(No output)"
-                st.subheader("Draft")
-                st.write(text)
+
+                # Safely extract text
+                text = ""
+                if resp and getattr(resp, "candidates", None):
+                    parts = resp.candidates[0].content.parts
+                    if parts and getattr(parts[0], "text", None):
+                        text = parts[0].text
+                if not text:
+                    text = "(No output)"
+
+                # Remember last draft so it persists after reruns
+                st.session_state.last_draft = text
+
+                # Log generation locally
                 log_entry = {
                     "timestamp": datetime.now().isoformat(),
-                    "prompt_snippet": prompt[:500],  # only first 500 chars for readability
+                    "event": "generation",
+                    "project_id": PROJECT_ID,
+                    "model_name": MODEL_NAME,
+                    "prompt_snippet": prompt[:500],
                     "response_snippet": text[:500],
-                    "project_id": PROJECT_ID
                 }
-                with open("logs.txt", "a") as f:
+                with open(LOG_PATH, "a") as f:
                     f.write(json.dumps(log_entry) + "\n")
-                st.info("Log saved locally (logs.txt)")
-                st.divider()
-                st.caption("Feedback (P1 will log this to Firestore)")
-                fb_cols = st.columns(3)
-                with fb_cols[0]:
-                    st.button("👍 Looks good")
-                with fb_cols[1]:
-                    st.button("👎 Needs work")
-                with fb_cols[2]:
-                    st.button("Save my final version (coming soon)")
+
+                st.success("Draft generated. See below. (Logged to logs.txt)")
 
             except Exception as e:
                 st.error(f"Generation failed: {e}")
 
+# ---------- Persistent draft & feedback (always shown if we have a draft) ----------
+if st.session_state.last_draft:
+    st.subheader("Draft")
+    st.write(st.session_state.last_draft)
+
+    st.divider()
+    st.caption("Feedback (logged locally)")
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("👍 Looks good"):
+            fb = {
+                "timestamp": datetime.now().isoformat(),
+                "event": "feedback",
+                "rating": "up",
+                "project_id": PROJECT_ID,
+                "model_name": MODEL_NAME,
+                "response_snippet": (st.session_state.last_draft or "")[:500],
+            }
+            with open(LOG_PATH, "a") as f:
+                f.write(json.dumps(fb) + "\n")
+            st.success("Logged 👍")
+    with col_b:
+        if st.button("👎 Needs work"):
+            fb = {
+                "timestamp": datetime.now().isoformat(),
+                "event": "feedback",
+                "rating": "down",
+                "project_id": PROJECT_ID,
+                "model_name": MODEL_NAME,
+                "response_snippet": (st.session_state.last_draft or "")[:500],
+            }
+            with open(LOG_PATH, "a") as f:
+                f.write(json.dumps(fb) + "\n")
+            st.success("Logged 👎")
+
+    # New full-width row for final version with a larger text area
+    st.markdown("#### (Optional) Paste your final version to save")
+    final = st.text_area(
+        "Final version",
+        height=220,
+        placeholder="Paste the version you actually sent here…",
+    )
+    if st.button("Save final"):
+        fb = {
+            "timestamp": datetime.now().isoformat(),
+            "event": "final_submission",
+            "project_id": PROJECT_ID,
+            "model_name": MODEL_NAME,
+            "final_snippet": (final or "")[:1000],
+        }
+        with open(LOG_PATH, "a") as f:
+            f.write(json.dumps(fb) + "\n")
+        st.success("Saved final version")
+
+# ---------- Sidebar ----------
 st.sidebar.header("Settings")
-st.sidebar.write(f"Project: **{PROJECT_ID or '(unset)'}**")
+st.sidebar.write(f"Project: **{PROJECT_ID or '(auto from key)'}**")
 st.sidebar.write(f"Region: **{REGION}**")
-st.sidebar.info("Tip: for better quality, later switch to `gemini-2.5-pro`.")
+st.sidebar.write(f"Model: **{MODEL_NAME}**")
+st.sidebar.info(
+    "built with curiosity and passion, by Gabrielle Yang."
+)
