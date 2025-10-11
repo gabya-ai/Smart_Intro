@@ -19,7 +19,7 @@ import vertexai
 from vertexai.generative_models import GenerativeModel
 
 from prompts import BASE_PROMPT
-
+from firestore_utils import save_log
 # ---------- Config & setup ----------
 
 # Load .env if present (optional)
@@ -118,13 +118,26 @@ if submitted:
                     "event": "generation",
                     "project_id": PROJECT_ID,
                     "model_name": MODEL_NAME,
-                    "prompt_snippet": prompt[:500],
-                    "response_snippet": text[:500],
+                    "prompt_snippet": prompt,
+                    "response_snippet": text,
                 }
                 with open(LOG_PATH, "a") as f:
                     f.write(json.dumps(log_entry) + "\n")
 
-                st.success("Draft generated. See below. (Logged to logs.txt)")
+                # firestore log generation
+                try:
+                    doc_id = save_log("generation",{
+                        "timestamp":log_entry["timestamp"],
+                        "project_id":PROJECT_ID,
+                        "model_name": MODEL_NAME,
+                        "prompt_snippet": log_entry["prompt_snippet"],
+                        "response_snippet":log_entry["response_snippet"],
+                        })
+                    st.info(f"Firestore ✓ generation saved (id={doc_id})")
+                except Exception as fe:
+                    st.info(f"(Firestore skip) {fe}")                      
+
+                st.success("Draft generated. See below")
 
             except Exception as e:
                 st.error(f"Generation failed: {e}")
@@ -146,10 +159,15 @@ if st.session_state.last_draft:
                 "rating": "up",
                 "project_id": PROJECT_ID,
                 "model_name": MODEL_NAME,
-                "response_snippet": (st.session_state.last_draft or "")[:500],
+                "response_snippet": (st.session_state.last_draft or ""),
             }
             with open(LOG_PATH, "a") as f:
                 f.write(json.dumps(fb) + "\n")
+            try:
+                doc_id = save_log("feedback", fb)
+                st.info(f"Firestore ✓ feedback saved (id={doc_id})")
+            except Exception as fe:
+                st.info(f"(Firestore skip) {fe}")
             st.success("Logged 👍")
     with col_b:
         if st.button("👎 Needs work"):
@@ -159,18 +177,23 @@ if st.session_state.last_draft:
                 "rating": "down",
                 "project_id": PROJECT_ID,
                 "model_name": MODEL_NAME,
-                "response_snippet": (st.session_state.last_draft or "")[:500],
+                "response_snippet": (st.session_state.last_draft or ""),
             }
             with open(LOG_PATH, "a") as f:
                 f.write(json.dumps(fb) + "\n")
+            try:
+                doc_id = save_log("feedback", fb)
+                st.info(f"Firestore ✓ feedback saved (id={doc_id})")
+            except Exception as fe:
+                st.info(f"(Firestore skip) {fe}")
             st.success("Logged 👎")
 
     # New full-width row for final version with a larger text area
-    st.markdown("#### (Optional) Paste your final version to save")
+    st.markdown("#### (Optional) Paste your final version to save or leave a written feedback")
     final = st.text_area(
         "Final version",
         height=220,
-        placeholder="Paste the version you actually sent here…",
+        placeholder="Paste the version you actually sent here, this will help it smarter next time!",
     )
     if st.button("Save final"):
         fb = {
@@ -178,17 +201,21 @@ if st.session_state.last_draft:
             "event": "final_submission",
             "project_id": PROJECT_ID,
             "model_name": MODEL_NAME,
-            "final_snippet": (final or "")[:1000],
+            "final_snippet": (final or ""),
         }
         with open(LOG_PATH, "a") as f:
             f.write(json.dumps(fb) + "\n")
+        try:
+            doc_id = save_log("final_submission", fb)
+            st.info(f"Firestore ✓ final saved (id={doc_id})")
+        except Exception as fe:
+            st.info(f"Firestore skip, {fe}")
         st.success("Saved final version")
 
 # ---------- Sidebar ----------
-st.sidebar.header("Settings")
-st.sidebar.write(f"Project: **{PROJECT_ID or '(auto from key)'}**")
-st.sidebar.write(f"Region: **{REGION}**")
-st.sidebar.write(f"Model: **{MODEL_NAME}**")
 st.sidebar.info(
-    "built with curiosity and passion, by Gabrielle Yang."
+    "built with curiosity and love, by Gabrielle Yang."
+)
+st.sidebar.info(
+    "Hope it helps."
 )
