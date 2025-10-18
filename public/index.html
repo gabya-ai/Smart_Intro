@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartIntro Sign-In</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --primary: #5f2eea;
+      --primary-hover: #4416c5;
+      --bg: #f7f7fb;
+      --card: #fff;
+      --text: #1c1c28;
+      --muted: #5a5a73
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background:
+        radial-gradient(circle at top right, rgba(95, 46, 234, .08), transparent 45%),
+        radial-gradient(circle at bottom left, rgba(95, 46, 234, .08), transparent 50%), var(--bg)
+    }
+
+    main {
+      width: min(420px, 92vw);
+      background: var(--card);
+      padding: 48px 40px;
+      border-radius: 28px;
+      box-shadow: 0 24px 60px rgba(26, 24, 35, .08);
+      text-align: center
+    }
+
+    h1 {
+      font-size: 1.9rem;
+      margin: 0 0 12px;
+      color: var(--text)
+    }
+
+    p {
+      margin: 0 0 28px;
+      color: var(--muted);
+      line-height: 1.6
+    }
+
+    .field {
+      text-align: left;
+      margin: 0 0 14px
+    }
+
+    label {
+      display: block;
+      font-size: .9rem;
+      color: var(--muted);
+      margin: 0 0 6px
+    }
+
+    input[type="email"],
+    input[type="password"] {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid #e6e6ef;
+      outline: none;
+      font-size: 1rem
+    }
+
+    input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(95, 46, 234, .12)
+    }
+
+    .actions {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px
+    }
+
+    button {
+      appearance: none;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      width: 100%;
+      font-size: 1.05rem;
+      font-weight: 600;
+      padding: 14px 18px;
+      border-radius: 14px;
+      background: var(--primary);
+      color: #fff;
+      cursor: pointer;
+      transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+      box-shadow: 0 16px 40px rgba(95, 46, 234, .25)
+    }
+
+    button:hover {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+      box-shadow: 0 20px 44px rgba(95, 46, 234, .28)
+    }
+
+    button:active {
+      transform: translateY(0);
+      box-shadow: 0 10px 28px rgba(95, 46, 234, .2)
+    }
+
+    button.secondary {
+      background: #f0effb;
+      color: var(--primary);
+      box-shadow: none
+    }
+
+    button.secondary:hover {
+      background: #e7e5fb
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: .85
+    }
+
+    #status {
+      margin-top: 18px;
+      font-size: .95rem;
+      color: var(--muted);
+      min-height: 1.2em
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <h1>Sign in to SmartIntro</h1>
+    <p>Use your email and password to continue crafting cover letters in your own voice.</p>
+
+    <div class="field"><label for="email">Email</label><input id="email" type="email" required autocomplete="email" />
+    </div>
+    <div class="field"><label for="password">Password</label><input id="password" type="password" required
+        autocomplete="current-password" /></div>
+
+    <div class="actions">
+      <button id="login-button" type="button">Sign in</button>
+      <button id="create-button" type="button" class="secondary">Create account</button>
+    </div>
+    <div id="status" role="status" aria-live="polite"></div>
+
+    <hr style="margin:24px 0;border:none;border-top:1px solid #eee" />
+    <div id="intro" style="text-align:left;display:none">
+      <h2 style="margin:0 0 8px;">Hi, I’m Gabrielle (Gabby) Yang</h2>
+      <p style="margin:0 0 12px;color:#5a5a73">
+        I build Genie-Hi to help you craft tailored outreach and cover letters in your own voice.
+      </p>
+      <p style="margin:0 0 16px">
+        <a href="https://www.linkedin.com/in/gabrielle-yang/" target="_blank" rel="noopener">LinkedIn</a> ·
+        <a href="https://medium.com/@gxyang13" target="_blank" rel="noopener">Medium</a>
+      </p>
+      <a id="open-app" class="btn" href="https://genie-hi-770619956563.us-west1.run.app/"
+        style="display:inline-block;padding:12px 16px;border-radius:12px;background:#5f2eea;color:#fff;text-decoration:none;font-weight:700">Open
+        Genie-Hi</a>
+    </div>
+
+
+  </main>
+
+  <script type="module">
+    import { observeAuth, loginWithEmailPassword, registerWithEmailPassword }
+      from "./firebase-init.js?v=20251015-6";
+
+    const statusEl = document.getElementById("status");
+    const loginBtn = document.getElementById("login-button");
+    const createBtn = document.getElementById("create-button");
+    // const loginBtn = document.getElementById("login-button");
+    // const createBtn = document.getElementById("create-button");
+    const intro = document.getElementById("intro");
+
+    observeAuth((user) => {
+      if (user) {
+        // user is signed in: freeze auth UI and show intro + open-app
+        if (loginBtn) loginBtn.disabled = true;
+        if (createBtn) {
+          createBtn.disabled = true;
+          createBtn.classList.add("secondary");
+          createBtn.textContent = "Already signed in";
+        }
+        if (intro) intro.style.display = "block";
+      } else {
+        // user not signed in: normal auth UI
+        if (loginBtn) loginBtn.disabled = false;
+        if (createBtn) {
+          createBtn.disabled = false;
+          createBtn.textContent = "Create account";
+        }
+        if (intro) intro.style.display = "none";
+      }
+    });
+
+    // Redirect directly to the Cover Letter page on Cloud Run
+    const defaultReturn = "https://genie-hi-770619956563.us-west1.run.app/";
+    const params = new URLSearchParams(window.location.search);
+    let returnUrl = params.get("return") || defaultReturn;
+    try { returnUrl = new URL(returnUrl).toString(); } catch { returnUrl = defaultReturn; }
+
+    async function redirectToApp(user) {
+      if (!user) return;
+      statusEl.textContent = "Signing you in…";
+      try {
+        const idToken = await user.getIdToken(true);
+        const target = new URL(returnUrl);
+        target.searchParams.set("id_token", idToken);
+        window.location.href = target.toString();
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = "Could not complete sign-in.";
+        loginBtn.disabled = false; createBtn.disabled = false;
+      }
+    }
+
+    loginBtn.addEventListener("click", async () => {
+      loginBtn.disabled = true; createBtn.disabled = true; statusEl.textContent = "Signing in…";
+      try {
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+        const user = await loginWithEmailPassword(email, password);
+        await redirectToApp(user);
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = err?.message || "Sign-in failed.";
+        loginBtn.disabled = false; createBtn.disabled = false;
+      }
+    });
+
+    createBtn.addEventListener("click", async () => {
+      loginBtn.disabled = true; createBtn.disabled = true; statusEl.textContent = "Creating your account…";
+      try {
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+        await registerWithEmailPassword(email, password);
+        statusEl.textContent = "Account created! Now click “Sign in”.";
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = err?.message || "Registration failed.";
+      } finally {
+        loginBtn.disabled = false; createBtn.disabled = false;
+      }
+    });
+
+    // Already signed in? Auto-redirect.
+    observeAuth(async (user) => { if (!user || document.hidden) return; await redirectToApp(user); });
+  </script>
+</body>
+
+</html>
