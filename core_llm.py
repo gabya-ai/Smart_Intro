@@ -14,7 +14,9 @@ from prompts import BASE_PROMPT  # reuse your template ✅
 import vertexai
 from settings import PROJECT_ID, VERTEX_REGION
 vertexai.init(project=PROJECT_ID, location=VERTEX_REGION)
-
+import vertexai
+from vertexai.generative_models import GenerativeModel
+        
 def build_prompt(resume: str, jd: str, highlights: str,
                  length_style: str, format_style: str) -> str:
     # Exactly your placeholder keys from prompts.py
@@ -26,16 +28,24 @@ def build_prompt(resume: str, jd: str, highlights: str,
         jd=jd,
     )
 
-def generate_cover_letter(resume: str, jd: str, length_pref: str,
-                          format_choice: str, highlights: str) -> str:
-    prompt = build_prompt(resume, jd, highlights, length_pref, format_choice)
+def generate_cover_letter(prompt: str) -> str:
 
     if LLM_PROVIDER == "VERTEX":
-        import vertexai
-        from vertexai.generative_models import GenerativeModel
         vertexai.init(location=VERTEX_REGION)  # project inferred from ADC
         model = GenerativeModel(VERTEX_MODEL)
         out = model.generate_content(prompt)
         return (out.text or "").strip()
 
+    # If you add openai to requirements later, you can enable this:
+    # elif LLM_PROVIDER == "OPENAI":
+    #     from openai import OpenAI
+    #     client = OpenAI()
+    #     resp = client.chat.completions.create(
+    #         model=os.getenv("OPENAI_MODEL","gpt-4o-mini"),
+    #         messages=[{"role":"system","content":"You write tailored cover letters."},
+    #                   {"role":"user","content":prompt}],
+    #         temperature=0.7,
+    #     )
+    #     return resp.choices[0].message.content.strip()
+    
     raise ValueError(f"Unsupported LLM_PROVIDER={LLM_PROVIDER}")

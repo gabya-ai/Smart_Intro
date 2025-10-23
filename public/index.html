@@ -147,6 +147,10 @@
     <div class="field"><label for="password">Password</label><input id="password" type="password" required
         autocomplete="current-password" /></div>
 
+    <p style="font-size: 13px; color: #6B7280; margin-top: 12px;">
+      First time here? Enter your email, create a password, and click
+      <strong>"Create account"</strong> to get started.
+    </p>
     <div class="actions">
       <button id="login-button" type="button">Sign in</button>
       <button id="create-button" type="button" class="secondary">Create account</button>
@@ -168,7 +172,33 @@
         Genie-Hi</a>
     </div>
 
+    <hr style="margin:24px 0;border:none;border-top:1px solid #eee" />
+    <button id="testApiBtn" type="button"
+      style="width:100%;background:#f0effb;color:#5f2eea;border:none;padding:12px 14px;border-radius:12px;font-weight:600;cursor:pointer;">
+      Test Backend Connection
+    </button>
+    <script>
+      document.getElementById("testApiBtn").addEventListener("click", async () => {
+        try {
+          // Call the base of your backend that Streamlit serves
+          const res = await fetch("/api/");
+          const ct = (res.headers.get("content-type") || "").toLowerCase();
 
+          if (res.ok) {
+            if (ct.includes("text/html")) {
+              alert("Backend reachable ✅ (Streamlit HTML received)");
+            } else {
+              const text = await res.text();
+              alert("Backend reachable ✅\n" + text.slice(0, 200));
+            }
+          } else {
+            alert("Backend error: " + res.status + " " + res.statusText);
+          }
+        } catch (err) {
+          alert("Error calling backend: " + err);
+        }
+      });
+    </script>
   </main>
 
   <script type="module">
@@ -206,15 +236,51 @@
     // Redirect directly to the Cover Letter page on Cloud Run
     const defaultReturn = "https://genie-hi-770619956563.us-west1.run.app/";
     const params = new URLSearchParams(window.location.search);
-    let returnUrl = params.get("return") || defaultReturn;
-    try { returnUrl = new URL(returnUrl).toString(); } catch { returnUrl = defaultReturn; }
+    // let returnUrl = params.get("return") || defaultReturn;
+    const PROD_RETURN = 'https://genie-hi-503651948869.us-west1.run.app'; // e.g. https://genie-hi-xxxxx-uw.a.run.app
+    const LOCAL_RETURN = 'http://localhost:8501';
+
+    function computeReturnUrl() {
+      // 1) honor explicit ?return=... if present
+      const fromQuery = params.get('return');
+      if (fromQuery) return fromQuery;
+
+      // 2) otherwise, pick based on where the sign-in page is running
+      const host = window.location.hostname;
+      if (host === 'localhost' || host.endsWith('.ngrok-free.app')) {
+        return LOCAL_RETURN;
+      }
+      // default (web.app / firebaseapp.com / custom domain)
+      return PROD_RETURN;
+    }
+    const RETURN_URL = computeReturnUrl();
+
+    // ---------- Auth state UI ----------
+    observeAuth((user) => {
+      if (user) {
+        if (loginBtn) loginBtn.disabled = true;
+        if (createBtn) {
+          createBtn.disabled = true;
+          createBtn.classList.add("secondary");
+          createBtn.textContent = "Already signed in";
+        }
+        if (intro) intro.style.display = "block";
+      } else {
+        if (loginBtn) loginBtn.disabled = false;
+        if (createBtn) {
+          createBtn.disabled = false;
+          createBtn.textContent = "Create account";
+        }
+        if (intro) intro.style.display = "none";
+      }
+    });
 
     async function redirectToApp(user) {
       if (!user) return;
       statusEl.textContent = "Signing you in…";
       try {
         const idToken = await user.getIdToken(true);
-        const target = new URL(returnUrl);
+        const target = new URL(RETURN_URL);
         target.searchParams.set("id_token", idToken);
         window.location.href = target.toString();
       } catch (err) {

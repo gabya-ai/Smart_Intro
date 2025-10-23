@@ -9,15 +9,37 @@ Original file is located at
 
 # db_ops.py
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 import hashlib
 
 from firebase_admin import firestore
 from google.cloud import firestore as gcf
 from Levenshtein import distance as lev
-
+import firebase_init 
 from settings import get_db
 _db = get_db()
+
+import os
+from google.cloud import firestore
+
+import firebase_admin
+from firebase_admin import credentials
+
+_PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")# or "hallowed-cortex-474405-b4"
+_db = firestore.Client(project="genie-hi-front")
+
+if not firebase_admin._apps:
+    # Use default creds, but pin project to the same one:
+    firebase_admin.initialize_app(options={
+        "projectId": "genie-hi-front"
+    })
+
+try:
+    from google.cloud import firestore as gcf
+    _tmp_client = gcf.Client()
+    print("DEBUG Firestore project =", _tmp_client.project)
+except Exception as e:
+    print("DEBUG Firestore project lookup failed:", e)
 
 def uid_from_email(email: str) -> str:
     return hashlib.sha1((email or "anon@example.com").strip().lower().encode()).hexdigest()
@@ -73,7 +95,7 @@ def upsert_final_and_metric(uid: str, session_id: str, final_text: str) -> float
       })
     return d
 
-def save_feedback(uid: str, session_id: str, thumb: int, reason: str=""):
+def save_feedback(uid: str, user_email: str, session_id: str, thumb: int, reason: str=""):
     _db.collection("users").document(uid).collection("sessions").document(session_id) \
       .collection("feedback").add({"thumb": int(thumb), "reason": reason, "created_at": datetime.utcnow()})
 
@@ -81,3 +103,16 @@ def promote_exemplar(uid: str, final_text: str):
     _db.collection("users").document(uid).collection("exemplars").add({
         "text": final_text or "", "approved_at": datetime.utcnow()
     })
+
+
+def log_interaction(uid: str, user_email: str,session_id: str, event_type: str, payload: dict):
+    doc = {
+        "uid": uid,
+        "user_email": user_email,
+        "session_id": session_id,
+        "event_type": event_type,
+        "details": payload,
+        "ts": firestore.SERVER_TIMESTAMP,
+    }
+    # single canonical collection name
+    return _db.collection("interaction_logs").add(doc)

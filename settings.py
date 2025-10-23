@@ -9,11 +9,12 @@ Original file is located at
 
 # settings.py
 import os
+import firebase_init  # ensures Firebase Admin is initialized
 from dotenv import load_dotenv
 load_dotenv()  # harmless on Cloud Run
 
-PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
-GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+PROJECT_ID = "genie-hi-front"#os.getenv("FIREBASE_PROJECT_ID", "")
+GOOGLE_APPLICATION_CREDENTIALS = "service-account-genie-hi-front.json"#os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
 # LLM provider — default to Vertex (you don’t have openai in requirements)
 LLM_PROVIDER = (os.getenv("LLM_PROVIDER") or "VERTEX").upper()
