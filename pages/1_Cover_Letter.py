@@ -1,8 +1,13 @@
-# pages/1_Cover_Letter.py — Main generator (auth required)
-import datetime
 import os
 import uuid
+import datetime
+# import streamlit.web.server.websocket_headers as st_ws
 import streamlit as st
+
+# Must be first Streamlit call
+st.set_page_config(page_title="Genie-Hi: Write your first Hi", page_icon="💌")
+
+# Safe to import after page_config
 from firebase_admin import auth as admin_auth
 import firebase_init
 from db_ops import (
@@ -15,21 +20,72 @@ from db_ops import (
 )
 from core_llm import generate_cover_letter, build_prompt_cover_letter, build_prompt_suggestion
 
+COOKIE_NAME = "gh_id_token"
 
+# ---------- small utils ----------
 def _first(v):
     return v[0] if isinstance(v, list) else v
 
 def _utc_now_iso():
     return datetime.datetime.now(datetime.UTC).isoformat()
 
+def _raw_cookie_header() -> str:
+    """Return the raw Cookie header safely across Streamlit versions."""
+    try:
+        # Preferred in Streamlit ≥1.37
+        return getattr(st, "context").headers.get("Cookie", "")
+    except Exception:
+        # Fallback for older builds
+        try:
+            import streamlit.web.server.websocket_headers as st_ws
+            return st_ws._get_websocket_headers().get("Cookie", "")
+        except Exception:
+            return ""
+        
+def _get_cookie():
+    cookies = _raw_cookie_header()
+    for kv in cookies.split(";"):
+        if kv.strip().startswith(f"{COOKIE_NAME}="):
+            return kv.split("=", 1)[1].strip()
+    return None
+
+
+# def _clear_cookie():
+#     st.markdown(
+#         f"""
+#         <script>
+#         document.cookie = "{COOKIE_NAME}=; path=/; max-age=0;";
+#         </script>
+#         """,
+#         unsafe_allow_html=True,
+#     )
+
+def _set_cookie_js(token: str | None):
+    """Write or clear cookie via small JS snippet."""
+    if token:
+        st.markdown(
+            f"""
+            <script>
+            document.cookie = "{COOKIE_NAME}={token}; path=/; max-age={7*24*3600}; SameSite=Lax";
+            </script>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"""
+            <script>
+            document.cookie = "{COOKIE_NAME}=; path=/; max-age=0;";
+            </script>
+            """,
+            unsafe_allow_html=True,
+        )
+
 def _autosave_final(action: str):
     sid = st.session_state.get("SESSION_ID")
     if not sid:
         return None
-    final_text = (
-    st.session_state.get("EDIT_DRAFT", "")
-    or st.session_state.get("DRAFT_TEXT", "")
-).strip()
+    final_text = (st.session_state.get("EDIT_DRAFT", "") or st.session_state.get("DRAFT_TEXT", "")).strip()
     if not final_text:
         return None
     edit_distance = upsert_final_and_metric(UID, sid, final_text)
@@ -39,75 +95,84 @@ def _autosave_final(action: str):
             user_email,
             sid,
             "final_saved",
-            {
-                "final_text": final_text,
-                "edit_distance": edit_distance,
-                "triggered_by": action,
-            },
+            {"final_text": final_text, "edit_distance": edit_distance, "triggered_by": action},
         )
     except Exception as e:
         print("Logging final_saved failed:", e)
     return {"final_text": final_text, "edit_distance": edit_distance}
 
+# ---------- unified auth restore (session → URL token → cookie) ----------
+def _try_restore_from_session():
+    user = st.session_state.get("user")
+    if user and user.get("uid"):
+        return user
+    return None
 
-st.set_page_config(page_title="Genie-Hi: Write your first Hi", page_icon="💌")
+def _try_restore_from_url_token():
+    token = None
+    try:
+        token = (_first(st.query_params.get("id_token")) if hasattr(st, "query_params") else None)
+    except Exception:
+        token = None
+    if not token:
+        return None
+    try:
+        decoded = admin_auth.verify_id_token(token)
+        user_info = {"uid": decoded["uid"], "email": decoded.get("email", "")}
+        st.session_state["user"] = user_info
+        return user_info
+    except Exception:
+        return None
 
+def _try_restore_from_cookie():
+    raw = _get_cookie()
+    if not raw:
+        return None
+    try:
+        decoded = admin_auth.verify_id_token(raw)  # JWT -> claims
+        user_info = {"uid": decoded["uid"], "email": decoded.get("email", "")}
+        st.session_state["user"] = user_info
+        return user_info
+    except Exception as e:
+        print("Cookie verify error:", e)
+        _set_cookie_js(None)
+        return None
+
+def restore_user():
+    for fn in (_try_restore_from_session, _try_restore_from_url_token, _try_restore_from_cookie):
+        user = fn()
+        if user:
+            return user
+    return None
+
+# ---------- page setup ----------
 st.sidebar.caption("made with curiosity and love — by Gabrielle Yang")
 
-
-def _first(v):
-    return v[0] if isinstance(v, list) else v
-
-
-# If user not in session, try to restore from id_token in the URL
-if "user" not in st.session_state:
-    token = _first(st.query_params.get("id_token"))
-    if token:
-        try:
-            decoded = admin_auth.verify_id_token(token)
-            st.session_state["user"] = {
-                "uid": decoded["uid"],
-                "email": decoded.get("email", ""),
-            }
-        except Exception:
-            pass  # fall through to the normal 'not signed in' handling below
-
-# Existing guard (unchanged): if still no user, stop rendering
-if "user" not in st.session_state:
-    st.warning("You need to sign in first.")
-    st.stop()
-
-
-# --- Auth check: must be signed in ---
-firebase_user = st.session_state.get("user")
-
-# 3) Gate if still not signed in
+firebase_user = restore_user()
 if not firebase_user:
-    st.warning("You need to sign in first.")
-    st.link_button("Back to sign-in", "https://genie-hi-front.web.app")
+    st.switch_page("welcome.py")
     st.stop()
 
 UID = firebase_user["uid"]
-user_email = firebase_user["email"]
+user_email = firebase_user.get("email", "")
+st.write(f"Welcome back, {user_email}" if user_email else "Welcome back!")
+
 ensure_user_profile(UID, user_email)
+
 sid = st.session_state.get("SESSION_ID")
 if not sid:
-    # create placeholder session to avoid sid not defined errors
     sid = create_session(UID, resume_text="", jd_text="")
     st.session_state["SESSION_ID"] = sid
-# --------------------------
-# YOUR UI STARTS ↓
-# --------------------------
 
+# --------------------------
+# UI
+# --------------------------
 st.title("Answer the 'Why me' Question 💌")
 
-# Inputs
-resume = st.text_area(
-    "Resume", height=220, placeholder="Paste your resume…", key="resume"
-)
+resume = st.text_area("Resume", height=220, placeholder="Paste your resume…", key="resume")
 jd = st.text_area("Job Description", height=220, placeholder="Paste the JD…", key="jd")
 
-c1, c2, c3 = st.columns(3)
+c1, c2, _ = st.columns(3)
 with c1:
     format_choice = st.selectbox(
         "Format",
@@ -122,61 +187,41 @@ with c2:
         index=1,
         key="length_pref",
     )
+
 highlights = st.text_input("Highlights (comma-separated)")
 
-# State
-if "SESSION_ID" not in st.session_state:
-    st.session_state["SESSION_ID"] = ""
-if "DRAFT_TEXT" not in st.session_state:
-    st.session_state["DRAFT_TEXT"] = ""
-if "FINAL_TEXT" not in st.session_state:
-    st.session_state["FINAL_TEXT"] = ""
-if "draft_view" not in st.session_state:
-    st.session_state["draft_view"] = ""
+st.session_state.setdefault("DRAFT_TEXT", "")
+st.session_state.setdefault("FINAL_TEXT", "")
+st.session_state.setdefault("draft_view", "")
 
-# Generate
 if st.button("✨ Generate Draft", key="gen_btn"):
     gen_id = uuid.uuid4().hex
     st.session_state["GEN_ID"] = gen_id
     st.session_state["GEN_NUM"] = (st.session_state.get("GEN_NUM", 0) or 0) + 1
     gen_num = st.session_state["GEN_NUM"]
-    
-    # --- Generate Cover Letter ---
+
     prompt_cover_letter = build_prompt_cover_letter(
-        resume=resume,
-        jd=jd,
-        highlights=highlights,
-        length_style=length_pref,
-        format_style=format_choice,
+        resume=resume, jd=jd, highlights=highlights, length_style=length_pref, format_style=format_choice
     )
-    
     draft = generate_cover_letter(prompt_cover_letter)
 
     save_letter(UID, sid, draft, "draft")
-    st.session_state["SESSION_ID"] = sid
     st.session_state["DRAFT_TEXT"] = draft
     st.session_state["_LAST_EDIT_SNAPSHOT"] = draft
     st.session_state["EDIT_DRAFT"] = draft
     st.session_state["EDIT_VERSION"] = 0
     st.session_state["_NO_EDIT_LOGGED"] = False
 
-    # --- Generate Suggestions ---
     prompt_suggestions = build_prompt_suggestion(
-        resume=resume,
-        jd=jd,
-        highlights=highlights,
-        length_style=length_pref,
-        format_style=format_choice,
+        resume=resume, jd=jd, highlights=highlights, length_style=length_pref, format_style=format_choice
     )
-
     suggestions = generate_cover_letter(prompt_suggestions)
-
-    save_letter(UID, sid, suggestions, "suggestions")
+    # view-only; no DB write
     st.session_state["SUGGESTIONS_TEXT"] = suggestions
     st.session_state["_LAST_EDIT_SNAPSHOT_SUGGESTIONS"] = suggestions
     st.session_state["EDIT_SUGGESTIONS"] = suggestions
     st.session_state["EDIT_VERSION_SUGGESTIONS"] = 0
-    st.session_state["_NO_EDIT_LOGGED_SUGGESTIONS"] = False
+    st.session_state["_NO_EDIT_LOGGED_SUGGESTIONS"] = True
 
     try:
         log_interaction(
@@ -204,12 +249,7 @@ if st.button("✨ Generate Draft", key="gen_btn"):
 
 st.markdown("### Draft Preview & Edit")
 
-# -----------------------------------------------------------------------------
-# Cover letter Edit area (user edits directly on model output)
-# -----------------------------------------------------------------------------
-
 original_text = st.session_state.get("DRAFT_TEXT", "")
-
 edited_text = st.text_area(
     "Edit directly as you wish",
     value=st.session_state.get("EDIT_DRAFT", original_text),
@@ -217,28 +257,19 @@ edited_text = st.text_area(
     key="EDIT_DRAFT",
 )
 
-
-# Versioning logic (edits belong to the *current* generation)
 prev_snapshot = st.session_state.get("_LAST_EDIT_SNAPSHOT", original_text)
-
 if edited_text.strip() != prev_snapshot.strip():
     version_num = (st.session_state.get("EDIT_VERSION", 0) or 0) + 1
     st.session_state["EDIT_VERSION"] = version_num
     st.session_state["_LAST_EDIT_SNAPSHOT"] = edited_text
-
-    # 1) persist this edit as its own artifact (the missing piece)
     try:
         save_letter(UID, sid, edited_text, kind=f"edit_v{version_num}")
     except Exception as e:
         print("Saving edit version failed:", e)
-
-    # 2) update latest-final + metrics for the session
     try:
         upsert_final_and_metric(UID, sid, edited_text)
     except Exception as e:
         print("Autosave (upsert_final_and_metric) failed:", e)
-
-    # 3) log edit
     try:
         log_interaction(
             UID,
@@ -256,7 +287,6 @@ if edited_text.strip() != prev_snapshot.strip():
     except Exception as e:
         print("Logging edit_version failed:", e)
 else:
-    # Log 'no_edit' only once per generation to avoid spam
     if not st.session_state.get("_NO_EDIT_LOGGED"):
         try:
             ts = datetime.datetime.now(datetime.UTC).isoformat()
@@ -277,24 +307,14 @@ else:
         except Exception as e:
             print("Logging no_edit failed:", e)
 
-# -----------------------------------------------------------------------------
-# Suggestions (view-only)
-# -----------------------------------------------------------------------------
-st.title("### Tips for Your Resume 💡")
-
+st.markdown("### Tips for Your Resume 💡")
 suggestions_text = st.session_state.get("SUGGESTIONS_TEXT", "")
 if suggestions_text:
     st.markdown(suggestions_text)
 else:
     st.info("No suggestions generated yet.")
 
-# -----------------------------------------------------------------------------
-# Final text to save (latest edit, fallback to original)
-# -----------------------------------------------------------------------------
-
-reason = st.text_input(
-    "(optional) provide feedback to improve your next experience", key="feedback_reason"
-)
+reason = st.text_input("(optional) provide feedback to improve your next experience", key="feedback_reason")
 st.session_state["feedback"] = reason
 
 c4, c5 = st.columns(2)
@@ -313,9 +333,7 @@ with c4:
                     {
                         "thumb": 1,
                         "feedback": reason.strip(),
-                        "final_text": (final_info or {}).get(
-                            "final_text", st.session_state.get("FINAL_TEXT", "")
-                        ),
+                        "final_text": (final_info or {}).get("final_text", st.session_state.get("FINAL_TEXT", "")),
                     },
                 )
             except Exception as e:
@@ -338,9 +356,7 @@ with c5:
                     {
                         "thumb": -1,
                         "feedback": reason.strip(),
-                        "final_text": (final_info or {}).get(
-                            "final_text", st.session_state.get("FINAL_TEXT", "")
-                        ),
+                        "final_text": (final_info or {}).get("final_text", st.session_state.get("FINAL_TEXT", "")),
                     },
                 )
             except Exception as e:
