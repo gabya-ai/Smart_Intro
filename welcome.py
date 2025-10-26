@@ -1,5 +1,6 @@
 import os
 import json
+from db_ops import log_sign_in
 import streamlit as st
 
 # Must be the first Streamlit call
@@ -152,6 +153,8 @@ if id_token and not st.session_state.get("signed_in", False):
         st.session_state["user_email"] = decoded.get("email") or "User"
         st.session_state["user"] = {"uid": decoded.get("uid"), "email": decoded.get("email", "User")}
         st.session_state["id_token"] = id_token
+
+        log_sign_in(st.session_state["user_email"])
 
         # Clean URL and go to Cover Letter
         st.query_params.clear()

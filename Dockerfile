@@ -1,9 +1,9 @@
-FROM python:3.10-slim
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-ENV PORT=8080
-CMD streamlit run app.py --server.address 0.0.0.0 --server.port $PORT
+# fail build if welcome.py isn't in the image
+RUN ls -al && test -f welcome.py
+SHELL ["/bin/sh","-c"]
+CMD exec python -m streamlit run welcome.py --server.address 0.0.0.0 --server.port ${PORT:-8080}

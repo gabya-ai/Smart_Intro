@@ -23,7 +23,7 @@ import os
 from google.cloud import firestore
 
 import firebase_admin
-from firebase_admin import credentials
+from firebase_admin import credentials, firestore
 
 _PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT")# or "hallowed-cortex-474405-b4"
 _db = firestore.Client(project="genie-hi-front")
@@ -116,3 +116,12 @@ def log_interaction(uid: str, user_email: str,session_id: str, event_type: str, 
     }
     # single canonical collection name
     return _db.collection("interaction_logs").add(doc)
+
+def log_sign_in(uid):
+    """Log a successful sign-in event to Firestore."""
+    db = firestore.client()
+    db.collection("user_signin_logs").add({
+        "uid": uid,
+        "timestamp": firestore.SERVER_TIMESTAMP,
+        "event": "sign_in"
+    })
