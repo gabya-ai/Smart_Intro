@@ -13,7 +13,8 @@ from db_ops import (
     save_feedback,
     log_interaction,
 )
-from core_llm import generate_cover_letter, build_prompt
+from core_llm import generate_cover_letter, build_prompt_cover_letter, build_prompt_suggestion
+
 
 def _first(v):
     return v[0] if isinstance(v, list) else v
@@ -52,19 +53,6 @@ def _autosave_final(action: str):
 st.set_page_config(page_title="Genie-Hi: Write your first Hi", page_icon="💌")
 
 st.sidebar.caption("made with curiosity and love — by Gabrielle Yang")
-# # --- Firestore heartbeat (one-time test) ---
-# from db_ops import log_interaction
-# try:
-#     _ = log_interaction(
-#         uid="debug-uid",
-#         session_id="debug-session",
-#         event_type="heartbeat",
-#         payload={"source": "startup"}
-#     )
-#     print("DEBUG: heartbeat write attempted to 'interaction_logs'")
-# except Exception as e:
-#     print("ERROR: heartbeat write failed:", e)
-# # --- end heartbeat ---
 
 
 def _first(v):
@@ -93,10 +81,6 @@ if "user" not in st.session_state:
 # --- Auth check: must be signed in ---
 firebase_user = st.session_state.get("user")
 
-if not firebase_user:
-    st.warning("You need to sign in first.")
-    st.stop()
-
 # 3) Gate if still not signed in
 if not firebase_user:
     st.warning("You need to sign in first.")
@@ -115,7 +99,7 @@ if not sid:
 # YOUR UI STARTS ↓
 # --------------------------
 
-st.title("Generate your personalized cover letter")
+st.title("Answer the 'Why me' Question 💌")
 
 # Inputs
 resume = st.text_area(
@@ -152,28 +136,22 @@ if "draft_view" not in st.session_state:
 
 # Generate
 if st.button("✨ Generate Draft", key="gen_btn"):
-    prompt = build_prompt(
+    gen_id = uuid.uuid4().hex
+    st.session_state["GEN_ID"] = gen_id
+    st.session_state["GEN_NUM"] = (st.session_state.get("GEN_NUM", 0) or 0) + 1
+    gen_num = st.session_state["GEN_NUM"]
+    
+    # --- Generate Cover Letter ---
+    prompt_cover_letter = build_prompt_cover_letter(
         resume=resume,
         jd=jd,
         highlights=highlights,
         length_style=length_pref,
         format_style=format_choice,
     )
-    gen_id = uuid.uuid4().hex
-    st.session_state["GEN_ID"] = gen_id
-    st.session_state["GEN_NUM"] = (st.session_state.get("GEN_NUM", 0) or 0) + 1
-    gen_num = st.session_state["GEN_NUM"]
     
-    draft = generate_cover_letter(prompt)
-    # sid = create_session(
-    #     UID,
-    #     resume_text=resume,
-    #     jd_text=jd,
-    #     length_pref=length_pref,
-    #     highlights=highlights,
-    #     model=os.getenv("VERTEX_MODEL", "gemini-2.5-flash"),
-    #     prompt_version="p1.0",
-    # )
+    draft = generate_cover_letter(prompt_cover_letter)
+
     save_letter(UID, sid, draft, "draft")
     st.session_state["SESSION_ID"] = sid
     st.session_state["DRAFT_TEXT"] = draft
@@ -181,6 +159,24 @@ if st.button("✨ Generate Draft", key="gen_btn"):
     st.session_state["EDIT_DRAFT"] = draft
     st.session_state["EDIT_VERSION"] = 0
     st.session_state["_NO_EDIT_LOGGED"] = False
+
+    # --- Generate Suggestions ---
+    prompt_suggestions = build_prompt_suggestion(
+        resume=resume,
+        jd=jd,
+        highlights=highlights,
+        length_style=length_pref,
+        format_style=format_choice,
+    )
+
+    suggestions = generate_cover_letter(prompt_suggestions)
+
+    save_letter(UID, sid, suggestions, "suggestions")
+    st.session_state["SUGGESTIONS_TEXT"] = suggestions
+    st.session_state["_LAST_EDIT_SNAPSHOT_SUGGESTIONS"] = suggestions
+    st.session_state["EDIT_SUGGESTIONS"] = suggestions
+    st.session_state["EDIT_VERSION_SUGGESTIONS"] = 0
+    st.session_state["_NO_EDIT_LOGGED_SUGGESTIONS"] = False
 
     try:
         log_interaction(
@@ -198,6 +194,7 @@ if st.button("✨ Generate Draft", key="gen_btn"):
                 "format_choice": format_choice,
                 "model": os.getenv("VERTEX_MODEL", "gemini-2.5-flash"),
                 "draft_text": draft,
+                "suggestions_text": suggestions,
             },
         )
     except Exception as e:
@@ -208,7 +205,7 @@ if st.button("✨ Generate Draft", key="gen_btn"):
 st.markdown("### Draft Preview & Edit")
 
 # -----------------------------------------------------------------------------
-# Edit area (user edits directly on model output)
+# Cover letter Edit area (user edits directly on model output)
 # -----------------------------------------------------------------------------
 
 original_text = st.session_state.get("DRAFT_TEXT", "")
@@ -216,7 +213,7 @@ original_text = st.session_state.get("DRAFT_TEXT", "")
 edited_text = st.text_area(
     "Edit directly as you wish",
     value=st.session_state.get("EDIT_DRAFT", original_text),
-    height=220,
+    height=400,
     key="EDIT_DRAFT",
 )
 
@@ -281,9 +278,19 @@ else:
             print("Logging no_edit failed:", e)
 
 # -----------------------------------------------------------------------------
+# Suggestions (view-only)
+# -----------------------------------------------------------------------------
+st.title("### Tips for Your Resume 💡")
+
+suggestions_text = st.session_state.get("SUGGESTIONS_TEXT", "")
+if suggestions_text:
+    st.markdown(suggestions_text)
+else:
+    st.info("No suggestions generated yet.")
+
+# -----------------------------------------------------------------------------
 # Final text to save (latest edit, fallback to original)
 # -----------------------------------------------------------------------------
-
 
 reason = st.text_input(
     "(optional) provide feedback to improve your next experience", key="feedback_reason"

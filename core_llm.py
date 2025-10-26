@@ -10,17 +10,28 @@ Original file is located at
 # core_llm.py
 from typing import Optional, Dict, Any
 from settings import LLM_PROVIDER, VERTEX_MODEL, VERTEX_REGION
-from prompts import BASE_PROMPT  # reuse your template ✅
+from prompts import BASE_PROMPT, SUGGESTION_PROMPT
 import vertexai
 from settings import PROJECT_ID, VERTEX_REGION
 vertexai.init(project=PROJECT_ID, location=VERTEX_REGION)
 import vertexai
 from vertexai.generative_models import GenerativeModel
         
-def build_prompt(resume: str, jd: str, highlights: str,
+def build_prompt_cover_letter(resume: str, jd: str, highlights: str,
                  length_style: str, format_style: str) -> str:
     # Exactly your placeholder keys from prompts.py
     return BASE_PROMPT.format(
+        length_style=length_style,
+        format_style=format_style,
+        highlights=highlights,
+        resume=resume,
+        jd=jd,
+    )
+
+def build_prompt_suggestion(resume: str, jd: str, highlights: str,
+                 length_style: str, format_style: str) -> str:
+    # Exactly your placeholder keys from prompts.py
+    return SUGGESTION_PROMPT.format(
         length_style=length_style,
         format_style=format_style,
         highlights=highlights,

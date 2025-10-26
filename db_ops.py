@@ -66,7 +66,7 @@ def create_session(uid: str, resume_text: str, jd_text: str,
     return ref.id
 
 def save_letter(uid: str, session_id: str, text: str, kind: str):
-    assert kind in ("draft","final")
+    assert kind.startswith("edit_v") or kind in ("draft", "final", "suggestions")
     _db.collection("users").document(uid).collection("sessions").document(session_id) \
       .collection("letters").add({"type": kind, "text": text, "created_at": datetime.utcnow()})
 

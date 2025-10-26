@@ -1,6 +1,6 @@
 from typing import Dict, Any
 from google.cloud import firestore
-
+import firebase_init
 # Firestore uses Application Default Credentials (ADC).
 # Locally: your GOOGLE_APPLICATION_CREDENTIALS key.
 # On Cloud Run: the service account you deployed with.
