@@ -1,0 +1,10 @@
+streamlit>=1.37
+firebase-admin>=6.5
+google-cloud-firestore>=2.16
+google-cloud-secret-manager>=2.20
+google-cloud-aiplatform>=1.66
+requests>=2.31
+python-Levenshtein==0.25.1
+requests>=2.31
+protobuf>=4.25
+python-dotenv>=1.0.1

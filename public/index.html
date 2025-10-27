@@ -224,9 +224,9 @@
     const defaultReturn = "https://genie-hi-770619956563.us-west1.run.app/";
     const params = new URLSearchParams(window.location.search);
     // let returnUrl = params.get("return") || defaultReturn;
-    const PROD_RETURN = 'https://genie-hi-503651948869.us-west1.run.app'; // e.g. https://genie-hi-xxxxx-uw.a.run.app
-    const LOCAL_RETURN = 'http://localhost:8501';
-
+    const PROD_RETURN = 'https://genie-hi-503651948869.us-west1.run.app/';
+    const LOCAL_RETURN = 'http://localhost:8501/home';
+    
     function computeReturnUrl() {
       // 1) honor explicit ?return=... if present
       const fromQuery = params.get('return');

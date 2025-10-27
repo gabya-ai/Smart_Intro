@@ -18,7 +18,7 @@ import vertexai
 from vertexai.generative_models import GenerativeModel
         
 def build_prompt_cover_letter(resume: str, jd: str, highlights: str,
-                 length_style: str, format_style: str) -> str:
+                 length_style: str, format_style: str, feedback: Optional[str] = None) -> str:
     # Exactly your placeholder keys from prompts.py
     return BASE_PROMPT.format(
         length_style=length_style,
@@ -29,7 +29,7 @@ def build_prompt_cover_letter(resume: str, jd: str, highlights: str,
     )
 
 def build_prompt_suggestion(resume: str, jd: str, highlights: str,
-                 length_style: str, format_style: str) -> str:
+                 length_style: str, format_style: str, feedback: Optional[str] = None) -> str:
     # Exactly your placeholder keys from prompts.py
     return SUGGESTION_PROMPT.format(
         length_style=length_style,

@@ -19,6 +19,36 @@ from db_ops import (
     log_interaction,
 )
 from core_llm import generate_cover_letter, build_prompt_cover_letter, build_prompt_suggestion
+import streamlit as st
+import firebase_admin
+from firebase_admin import auth, credentials
+import urllib.parse
+
+# --- Initialize Firebase Admin only once ---
+if not firebase_admin._apps:
+    cred = credentials.Certificate("service-account-genie-hi-front.json")
+    firebase_admin.initialize_app(cred)
+
+# --- Try reading id_token from URL ---
+query_params = st.query_params
+id_token = query_params.get("id_token")
+
+# if id_token:
+#     try:
+#         decoded = auth.verify_id_token(id_token)
+#         uid = decoded["uid"]
+#         st.session_state["uid"] = uid
+#         st.session_state["email"] = decoded.get("email", "")
+#         # Optional: persist to cookie or session
+#         st.success(f"Welcome back, {st.session_state['email']}!")
+#     except Exception as e:
+#         st.error("Authentication failed, please sign in again.")
+#         st.stop()
+# else:
+#     # If no token in URL and no active session, block access
+#     if "uid" not in st.session_state:
+#         st.warning("Please sign in to continue.")
+#         st.stop()
 
 COOKIE_NAME = "gh_id_token"
 
@@ -48,17 +78,6 @@ def _get_cookie():
         if kv.strip().startswith(f"{COOKIE_NAME}="):
             return kv.split("=", 1)[1].strip()
     return None
-
-
-# def _clear_cookie():
-#     st.markdown(
-#         f"""
-#         <script>
-#         document.cookie = "{COOKIE_NAME}=; path=/; max-age=0;";
-#         </script>
-#         """,
-#         unsafe_allow_html=True,
-#     )
 
 def _set_cookie_js(token: str | None):
     """Write or clear cookie via small JS snippet."""
@@ -120,6 +139,7 @@ def _try_restore_from_url_token():
         decoded = admin_auth.verify_id_token(token)
         user_info = {"uid": decoded["uid"], "email": decoded.get("email", "")}
         st.session_state["user"] = user_info
+        _set_cookie_js(token)
         return user_info
     except Exception:
         return None
@@ -147,10 +167,30 @@ def restore_user():
 
 # ---------- page setup ----------
 st.sidebar.caption("made with curiosity and love — by Gabrielle Yang")
+st.sidebar.markdown(
+    """
+    Genie-Hi helps you craft tailored, authentic cover letters and outreach in your own voice.
 
+    **About me**  
+    Hi, I’m **Gabrielle (Gabby) Yang** — I built Genie-Hi to make job search writing faster and kinder.  
+
+    • [LinkedIn](https://www.linkedin.com/in/gabrielle-yang/)  
+    • [Medium](https://medium.com/@gxyang13)
+    """,
+    unsafe_allow_html=False,
+)
 firebase_user = restore_user()
 if not firebase_user:
-    st.switch_page("welcome.py")
+    # st.switch_page("welcome.py")
+    SIGNIN_URL = "https://genie-hi-front.web.app/index.html"  # or your actual Firebase Hosting URL
+
+    # Automatically redirect user to sign-in page if not logged in
+    st.markdown(
+        f"""
+        <meta http-equiv="refresh" content="0; url={SIGNIN_URL}?return=http://localhost:8501/home">
+        """,
+        unsafe_allow_html=True,
+    )
     st.stop()
 
 UID = firebase_user["uid"]
