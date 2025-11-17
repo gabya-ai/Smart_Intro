@@ -33,7 +33,6 @@ if not firebase_admin._apps:
 query_params = st.query_params
 id_token = query_params.get("id_token")
 
-
 COOKIE_NAME = "gh_id_token"
 
 # ---------- small utils ----------

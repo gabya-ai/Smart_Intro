@@ -1,3 +1,5 @@
+# .gcloudignore
+
 # Python
 __pycache__/
 *.pyc
@@ -15,5 +17,10 @@ __pycache__/
 *.env
 logs.txt
 
+# Optional secrets folder
 secret/
-*.json
+
+# Force-include critical files for the build
+!Dockerfile
+!requirements.txt
+!welcome.py
